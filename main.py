@@ -7,16 +7,19 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
+import webbrowser
 from tkinter import filedialog, messagebox, ttk
 
 import config as cfg
 import input_sender as isnd
+from audio_preview import AudioPreview
 from hotkeys import HotkeyManager, VK_CODE_TO_NAME, VK_NAME_TO_CODE
 from note_mapper import MelodyMode
 from player import Player
 from playback_engine import PlaybackEngine
 
 MIDI_EXTS = {".mid", ".midi", ".kar", ".rmi"}
+OFFICIAL_REPO_URL = "https://github.com/MingK1/Delta-Force-Harmonica-Player"
 
 
 def _scan_midi_dir(folder: str) -> list[str]:
@@ -43,6 +46,9 @@ class App:
         self.engine = PlaybackEngine()
         self.player = Player(self.engine)
         self.hotkeys = HotkeyManager()
+        self.audio_preview = AudioPreview(
+            on_finished=lambda: self.root.after(0, self._on_preview_finished)
+        )
 
         self._cfg = cfg.load()
         self.player.options = cfg.apply_to_options(self._cfg)
@@ -67,6 +73,7 @@ class App:
         self._hk_dialog: tk.Toplevel | None = None
         self._hk_listening: str | None = None  # 正在改键的动作名
         self._hk_labels: dict[str, ttk.Label] = {}
+        self._about_dialog: tk.Toplevel | None = None
         self._configure_style()
         self._build_ui()
         self._setup_hotkeys()
@@ -119,6 +126,8 @@ class App:
     # ================= UI =================
     def _configure_style(self) -> None:
         """建立轻量的 macOS 风格视觉基础，仍使用系统 ttk 控件。"""
+        self._font_family = "Microsoft YaHei UI"
+        self.root.option_add("*Font", (self._font_family, 10))
         self._colors = {
             "app": "#F5F5F7",
             "card": "#FFFFFF",
@@ -142,38 +151,38 @@ class App:
         style.configure("Status.TFrame", background=self._colors["status"])
         style.configure("Title.TLabel", background=self._colors["app"],
                         foreground=self._colors["text"],
-                        font=("Segoe UI Semibold", 20))
+                        font=(self._font_family, 20, "bold"))
         style.configure("Subtitle.TLabel", background=self._colors["app"],
-                        foreground=self._colors["muted"], font=("Segoe UI", 9))
+                        foreground=self._colors["muted"], font=(self._font_family, 9))
         style.configure("Section.TLabel", background=self._colors["card"],
-                        foreground=self._colors["text"], font=("Segoe UI Semibold", 12))
+                        foreground=self._colors["text"], font=(self._font_family, 12, "bold"))
         style.configure("Card.TLabel", background=self._colors["card"],
-                        foreground=self._colors["text"], font=("Segoe UI", 10))
+                        foreground=self._colors["text"], font=(self._font_family, 10))
         style.configure("Muted.Card.TLabel", background=self._colors["card"],
-                        foreground=self._colors["muted"], font=("Segoe UI", 9))
+                        foreground=self._colors["muted"], font=(self._font_family, 9))
         style.configure("Current.TLabel", background=self._colors["card"],
-                        foreground=self._colors["green"], font=("Segoe UI Semibold", 11))
+                        foreground=self._colors["green"], font=(self._font_family, 11, "bold"))
         style.configure("Status.TLabel", background=self._colors["status"],
-                        foreground=self._colors["muted"], font=("Segoe UI", 9))
+                        foreground=self._colors["muted"], font=(self._font_family, 9))
         style.configure("Accent.TButton", background=self._colors["blue"],
                         foreground="#FFFFFF", borderwidth=0, padding=(12, 7),
-                        font=("Segoe UI Semibold", 9))
+                        font=(self._font_family, 9, "bold"))
         style.map("Accent.TButton", background=[("active", self._colors["blue_dark"]),
                                                   ("disabled", "#B8D8FA")])
         style.configure("Secondary.TButton", background=self._colors["card"],
                         foreground=self._colors["text"], borderwidth=1,
-                        relief="solid", padding=(10, 6), font=("Segoe UI", 9))
+                        relief="solid", padding=(10, 6), font=(self._font_family, 9))
         style.map("Secondary.TButton", background=[("active", "#E5E5EA"),
                                                     ("disabled", "#F0F0F2")],
                   foreground=[("disabled", "#A1A1A6")])
         style.configure("Ghost.TButton", background=self._colors["app"],
                         foreground=self._colors["blue"], borderwidth=0,
-                        padding=(8, 5), font=("Segoe UI", 9))
+                        padding=(8, 5), font=(self._font_family, 9))
         style.map("Ghost.TButton", background=[("active", "#E5E5EA")])
         style.configure("Card.TLabelframe", background=self._colors["card"],
                         borderwidth=1, relief="solid")
         style.configure("Card.TLabelframe.Label", background=self._colors["card"],
-                        foreground=self._colors["text"], font=("Segoe UI Semibold", 10))
+                        foreground=self._colors["text"], font=(self._font_family, 10, "bold"))
         style.configure("TEntry", padding=(8, 6), fieldbackground="#FFFFFF")
         style.configure("TCombobox", padding=(6, 5))
         style.configure("TCheckbutton", background=self._colors["card"],
@@ -204,6 +213,9 @@ class App:
         self.hotkey_btn = ttk.Button(toolbar_actions, text="⌘ 热键",
                                      style="Secondary.TButton", command=self._open_hotkey_settings)
         self.hotkey_btn.pack(side="left", padx=(8, 0))
+        self.about_btn = ttk.Button(toolbar_actions, text="ⓘ 关于",
+                                    style="Secondary.TButton", command=self._open_about)
+        self.about_btn.pack(side="left", padx=(8, 0))
 
         content = ttk.Frame(self.root, style="App.TFrame", padding=(18, 0, 18, 12))
         content.grid(row=1, column=0, sticky="nsew")
@@ -239,7 +251,7 @@ class App:
             list_frame, height=10, relief="flat", borderwidth=0,
             highlightthickness=0, bg=self._colors["card"], fg=self._colors["text"],
             selectbackground=self._colors["blue"], selectforeground="#FFFFFF",
-            font=("Segoe UI", 10), activestyle="none", exportselection=False)
+            font=(self._font_family, 10), activestyle="none", exportselection=False)
         self.song_list.grid(row=0, column=0, sticky="nsew")
         self.song_list.bind("<<ListboxSelect>>", self._on_select_song)
         self.song_list.bind("<Double-Button-1>", self._on_double_click)
@@ -303,6 +315,10 @@ class App:
         self.stop_btn.pack(side="left", padx=(8, 0))
         self._action_buttons = {"prev": self.prev_btn, "play": self.play_btn,
                                 "next": self.next_btn, "stop": self.stop_btn}
+        self.preview_btn = ttk.Button(ctrl, text="试听", style="Secondary.TButton",
+                                     command=self._toggle_preview)
+        self.preview_btn.pack(side="left", padx=(8, 0))
+        self._action_buttons["preview"] = self.preview_btn
 
         note_card = ttk.Frame(self._workspace, style="Card.TFrame")
         note_card.grid(row=4, column=0, sticky="ew", pady=(18, 0))
@@ -349,7 +365,7 @@ class App:
         self.log_frame = ttk.Frame(self._workspace, style="Card.TFrame")
         self.log_text = tk.Text(self.log_frame, height=4, state="disabled", wrap="word",
                                 relief="flat", borderwidth=0, bg="#F7F7F9",
-                                fg=self._colors["muted"], font=("Consolas", 9), padx=8, pady=8)
+                                fg=self._colors["muted"], font=(self._font_family, 9), padx=8, pady=8)
         self.log_text.pack(fill="both", expand=True)
 
         status = ttk.Frame(self.root, style="Status.TFrame", padding=(18, 7))
@@ -408,8 +424,54 @@ class App:
         self._action_buttons["next"].configure(state="normal" if has_song else "disabled")
         self._action_buttons["stop"].configure(
             state="normal" if self.engine.is_running else "disabled")
+        preview_enabled = has_song and self.audio_preview.available
+        self._action_buttons["preview"].configure(
+            state="normal" if preview_enabled else "disabled",
+            text="停止试听" if self.audio_preview.is_running else "试听")
 
     # ================= 热键 =================
+    def _open_about(self) -> None:
+        if self._about_dialog is not None and self._about_dialog.winfo_exists():
+            self._about_dialog.lift()
+            return
+
+        dlg = tk.Toplevel(self.root)
+        dlg.title("关于 DFPlayer")
+        dlg.geometry("500x360")
+        dlg.resizable(False, False)
+        dlg.transient(self.root)
+        self._about_dialog = dlg
+
+        frame = ttk.Frame(dlg, style="Card.TFrame", padding=26)
+        frame.pack(fill="both", expand=True)
+        ttk.Label(frame, text="DFPlayer", style="Section.TLabel").pack(anchor="w")
+        ttk.Label(frame, text="MIDI 旋律播放器", style="Muted.Card.TLabel").pack(
+            anchor="w", pady=(3, 18))
+        ttk.Label(frame, text="作者：MingK1", style="Card.TLabel").pack(anchor="w")
+        ttk.Label(
+            frame,
+            text=(
+                "本软件免费开源。作者不会通过第三方平台出售 DFPlayer，"
+                "也不会授权他人以作者名义收费分发、捆绑或修改发布。\n\n"
+                "请只从官方 GitHub 仓库和 Releases 获取软件。遇到收费下载、"
+                "冒充作者或修改版软件，请以官方仓库信息为准。"
+            ),
+            style="Card.TLabel", justify="left", wraplength=440,
+        ).pack(anchor="w", pady=(14, 16))
+        ttk.Label(frame, text="官方仓库", style="Muted.Card.TLabel").pack(anchor="w")
+        repo = ttk.Label(frame, text=OFFICIAL_REPO_URL, style="Current.TLabel",
+                         cursor="hand2", wraplength=440)
+        repo.pack(anchor="w", pady=(3, 18))
+        repo.bind("<Button-1>", lambda _event: webbrowser.open(OFFICIAL_REPO_URL))
+
+        actions = ttk.Frame(frame, style="Card.TFrame")
+        actions.pack(fill="x", side="bottom")
+        ttk.Button(actions, text="打开官方仓库", style="Accent.TButton",
+                   command=lambda: webbrowser.open(OFFICIAL_REPO_URL)).pack(side="left")
+        ttk.Button(actions, text="关闭", style="Secondary.TButton",
+                   command=dlg.destroy).pack(side="right")
+        dlg.protocol("WM_DELETE_WINDOW", dlg.destroy)
+
     def _setup_hotkeys(self) -> None:
         hk = self._cfg["hotkeys"]
         self.hotkeys.clear()
@@ -530,6 +592,7 @@ class App:
     def _load_dir(self) -> None:
         self._directory_var.set(self._short_path(self._midi_dir) if self._midi_dir else "未选择乐谱目录")
         files = _scan_midi_dir(self._midi_dir)
+        self.audio_preview.stop()
         self.player.clear()
         self.track_combo.set("")
         self.track_combo["values"] = []
@@ -544,6 +607,7 @@ class App:
         self._log(f"已载入 {len(files)} 首 MIDI（来自 {self._midi_dir}）")
 
     def _clear_list(self) -> None:
+        self.audio_preview.stop()
         self.player.clear()
         self._refresh_song_list()
         self.track_combo.set("")
@@ -600,6 +664,7 @@ class App:
         idx = self._filtered_indices[row]
         if idx == self.player.current_index:
             return  # 同一首
+        self.audio_preview.stop()
         self.player.current_index = idx
         song = self.player.current
         if not song:
@@ -621,6 +686,7 @@ class App:
         """双击播放。"""
         sel = self.song_list.curselection()
         if sel and 0 <= sel[0] < len(self._filtered_indices):
+            self.audio_preview.stop()
             self.player.play_index(self._filtered_indices[sel[0]])
 
     def _refresh_track_combo(self, song_index: int) -> None:
@@ -648,21 +714,68 @@ class App:
                 messagebox.showinfo("提示", "打击乐轨不适合作为旋律，请另选。")
                 self._refresh_track_combo(self.player.current_index)
                 return
+            self.audio_preview.stop()
             song.selected_part_index = idx
             if self.engine.is_running:
                 self.player.apply_transpose_live()
             self._log(f"声部已切换：{song.midi.parts[idx].label()}")
 
     # ================= 播放 =================
+    def _preview_notes(self):
+        song = self.player.current
+        if not song:
+            return []
+        mapped = self.player._build_mapped(song)
+        return mapped.notes if mapped is not None else []
+
+    def _toggle_preview(self) -> None:
+        if self.audio_preview.is_running:
+            self.audio_preview.stop()
+            self._log("试听已停止。")
+            self._update_action_state()
+            return
+        song = self.player.current
+        if not song:
+            self._log("请先选择一首曲目。")
+            return
+        notes = self._preview_notes()
+        if not notes:
+            self._log("当前曲目没有可试听的音符。")
+            return
+        if self.engine.is_running:
+            self.player.stop()
+            self._log("已停止键鼠演奏，开始试听。")
+        if not self.audio_preview.start(notes, song.speed):
+            self._log("无法打开 Windows MIDI 音频设备。")
+            return
+        self.progress.set(0)
+        self.time_label.config(text=f"00:00 / {self._fmt(self.audio_preview.total)}")
+        self._log(f"正在试听：{song.name}（不会发送键盘或鼠标输入）")
+        self._update_action_state()
+
+    def _on_preview_finished(self) -> None:
+        if self.root.winfo_exists():
+            self._update_action_state()
+
+    def _restart_preview(self) -> None:
+        if not self.audio_preview.is_running:
+            return
+        song = self.player.current
+        self.audio_preview.stop()
+        if song:
+            self.audio_preview.start(self._preview_notes(), song.speed)
+
     def _play_pause(self) -> None:
         if not self.player.songs:
             self._log("歌单为空，请先选择乐谱目录。")
             return
+        self.audio_preview.stop()
         if self.player.play():
             self._log(f"正在播放：{self.player.current.name}" if self.player.current else "播放中。")
         self._update_action_state()
 
     def _stop(self) -> None:
+        self.audio_preview.stop()
         self.player.stop()
         self._log("已停止。")
         self._update_action_state()
@@ -693,6 +806,7 @@ class App:
 
     def _after_play_change(self) -> None:
         """播放曲目变更后刷新 UI。"""
+        self.audio_preview.stop()
         idx = self.player.current_index
         song = self.player.current
         if song:
@@ -719,6 +833,8 @@ class App:
             song.speed = v
         if self.engine.is_running:
             self.engine.speed = v
+        if self.audio_preview.is_running:
+            self.audio_preview.speed = v
 
     def _on_transpose(self) -> None:
         try:
@@ -729,6 +845,7 @@ class App:
         self.player.options.transpose = value
         if self.engine.is_running:
             self.player.apply_transpose_live()
+        self._restart_preview()
 
     def _one_key_transpose(self) -> None:
         if not self.player.current and self.player.songs:
@@ -741,9 +858,11 @@ class App:
         self._log(f"一键移调：{t:+d} 半音")
         if self.engine.is_running:
             self.player.apply_transpose_live()
+        self._restart_preview()
 
     def _on_toggle(self) -> None:
         self.player.options.trim_leading = self.trim_var.get()
+        self._restart_preview()
 
     def _on_melody_mode(self, _evt=None) -> None:
         for m in MelodyMode:
@@ -754,12 +873,16 @@ class App:
                 if song:
                     song.melody_mode = m
                 self._log(f"旋律提取模式：{m.value}")
+                self._restart_preview()
                 break
 
     def _on_seek(self, _evt=None) -> None:
         if self.engine.is_running and self.engine.total > 0:
             frac = self.progress.get() / 1000.0
             self.engine.seek_fraction(frac)
+        elif self.audio_preview.is_running and self.audio_preview.total > 0:
+            frac = self.progress.get() / 1000.0
+            self.audio_preview.seek_fraction(frac)
         self._seeking = False
 
     # ================= 刷新 =================
@@ -773,6 +896,12 @@ class App:
                 self.progress.set(min(1000, elapsed / total * 1000))
             self.time_label.config(text=f"{self._fmt(elapsed)} / {self._fmt(total)}")
             self.play_btn.config(text="▶ 继续" if self.engine.is_paused else "⏸ 暂停")
+        elif self.audio_preview.is_running and self.audio_preview.total > 0:
+            elapsed, total = self.audio_preview.elapsed, self.audio_preview.total
+            if not self._seeking:
+                self.progress.set(min(1000, elapsed / total * 1000))
+            self.time_label.config(text=f"{self._fmt(elapsed)} / {self._fmt(total)}")
+            self.play_btn.config(text="▶ 播放")
         else:
             self.play_btn.config(text="▶ 播放")
         self._update_action_state()
@@ -814,6 +943,7 @@ class App:
     def _on_close(self) -> None:
         try:
             self.engine.stop()
+            self.audio_preview.close()
             self.hotkeys.stop()
             cfg.save(self._collect_config())
         finally:

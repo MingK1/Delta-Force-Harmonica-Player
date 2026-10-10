@@ -34,6 +34,7 @@ exe = EXE(
     a.zipfiles,
     a.datas,
     [],
+    icon='DFPlayer.ico',
     name='DFPlayer',
     debug=False,
     bootloader_ignore_signals=False,
