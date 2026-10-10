@@ -24,7 +24,7 @@ DFPlayer 是一个面向 Windows 的 MIDI 旋律播放器。它读取标准 MIDI
 ## 作者声明与官方渠道
 
 - 作者：MingK1
-- 官方仓库：[MingK1/Delta-Force-Harmonica-Player](https://github.com/MingK1/Delta-Force-Harmonica-Player)
+- 官方仓库：[MingK1/DeltaForce-HarmonicaPlayer](https://github.com/MingK1/DeltaForce-HarmonicaPlayer)
 - DFPlayer 免费开源，作者不会通过第三方平台出售软件。
 - 未经作者授权，不得以作者名义收费分发、捆绑、修改发布或制作所谓“收费版”。
 - 下载软件时请以官方仓库的 `Releases` 页面为准，不要相信其他网站、网盘或个人发布的收费链接。

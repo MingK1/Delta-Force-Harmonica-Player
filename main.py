@@ -19,7 +19,7 @@ from player import Player
 from playback_engine import PlaybackEngine
 
 MIDI_EXTS = {".mid", ".midi", ".kar", ".rmi"}
-OFFICIAL_REPO_URL = "https://github.com/MingK1/Delta-Force-Harmonica-Player"
+OFFICIAL_REPO_URL = "https://github.com/MingK1/DeltaForce-HarmonicaPlayer"
 
 
 def _scan_midi_dir(folder: str) -> list[str]:
